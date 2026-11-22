@@ -64,8 +64,28 @@ Open `http://127.0.0.1:5420/run`. Each model loads the first time its panel is o
 
 If the service is not running, the page still works: every panel then shows saved answers
 (`web/public/data/tryjobs_demo.json`, `describe_demo.json`). `python -m dh.tryjobs --demo`, run after the
-thumbnails are downloaded, rewrites `tryjobs_demo.json` and the three tile pictures with your own computer's figures;
-`describe_demo.json` is a fixed recording.
+thumbnails are downloaded, rewrites `tryjobs_demo.json` and the three tile pictures with your own computer's figures
+and describes the 24 photos of `describe_demo.json` again, with the time, energy and FLOPs of each sentence.
+`python -m dh.tryjobs --describe` does only that last part. `python -m dh.tryjobs --recount` keeps the saved times
+and energies and works out again what does not depend on the computer's state: the FLOPs of the saved answers and
+the order of the closest entries.
+
+## Measure the jobs
+
+```bash
+python -m dh.measure        # photo descriptions (24 photos) and text generation (the page's four example requests)
+```
+
+Each item is run for real, one after another. The script writes `measurements/jobs_measured.json` (every item and
+the totals), adds the FLOPs per photo and per written token to `measurements/flops_per_unit.json`, and puts the
+figures into `web/public/data/summary.json`, where the page reads each panel's "Measured for this job" (for text
+generation the line is "Measured on 4 requests"). It also renews the photo-description entry of the assumptions
+table and, after a new text-generation run, the saved answers, so that those and the line above them are one run.
+`python -m dh.measure llm --saved` runs nothing and totals the saved answers instead. Close other programs first:
+their energy is inside the reading, and the script notes how busy they kept the processor. The energy per item also
+depends on the power the processor works at, so the note names the average power of the run; compare figures only
+at similar power. For text generation the unit is one written token and reading the request is included, so the
+figure is higher than the roughly 1.2 billion FLOPs one further token costs this model.
 
 ## Check it
 
@@ -81,8 +101,9 @@ cd web && npm run build     # type check and production build
   `components/DataTable.tsx`, `llm_examples.json` and the three style sheets next to it, plus TanStack Router (the
   panel is chosen with `?job=embed|image|render|caption|llm`), TanStack Query and TanStack Table.
 - **The service** is plain Python (`http.server`, no web framework): `dh/serve.py` holds the routes and is documented
-  at its top; `dh/tryjobs.py` holds the live use of the models; `dh/meter.py` the energy and FLOP figures;
-  `workers/jobs.py` the models and the tile arithmetic.
+  at its top; `dh/tryjobs.py` holds the live use of the models; `dh/meter.py` the energy readings; `dh/flops.py`
+  the count of operations; `dh/measure.py` the batch measurement; `workers/jobs.py` the models and the tile
+  arithmetic.
 - **The connection:** the page calls relative addresses under `/api` and `/thumbs`. Send those to the service, as
   `web/vite.config.ts` does for the dev server.
 - **Threads:** the models compute on 4 threads; set the environment variable `DH_THREADS` to change that.
@@ -95,10 +116,19 @@ cd web && npm run build     # type check and production build
 - **Energy** is read before and after a request (`dh/meter.py`). On Windows and Linux it is the processor's own
   energy counter (the processor only, not screen or fans); on a Mac laptop it is the whole computer's power summed
   over the request. Either way it includes every program that is running at that moment.
-- **FLOPs** are calculated, not read from hardware, with a multiply-add counted as 2. Tiles are counted exactly from
-  the picture. Text embeddings and photos use counts taken on real inputs (`measurements/flops_per_unit.json`). The
-  language model is counted as 2 per weight of the matrix products each token passes through. Photo descriptions are
-  not counted.
+- **FLOPs** are counted, not read from hardware, with a multiply-add counted as 2. Tiles are counted exactly from
+  the picture. Every answer of a model is counted while the model computes (`dh/flops.py`): each product with a
+  weight matrix or a convolution kernel, and the two products inside each attention step, from the sizes of the data
+  that really passed through. Additions of biases, normalisation, activation functions and table look-ups are left
+  out, and an attention step is counted whole also where a mask hides part of its result. Where PyTorch's own FLOP
+  counter can see the work, the two agree to the last digit (`tests/test_flops.py`). For one photo PyTorch's counter
+  gave 8,725,463,040 FLOPs in weight products and this count gives the same; the attention products, which that
+  counter cannot see, add 92,160,000, in all 8,817,623,040 (the figures of `measurements/flops_per_unit.json`).
+- **An archive photo** that you click needs no model: its vector was computed when the archive was indexed. The page
+  shows the FLOPs of the comparison (too brief for an energy reading) and what the vector itself took the job.
+- **Measured for this job** in each panel comes from `web/public/data/summary.json`. Text embeddings, photo indexing
+  and tile rendering were measured for the full dashboard; photo descriptions and text generation by
+  `python -m dh.measure` (see above), whose note says at what power and with how much other load.
 - **Saved answers** in `web/public/data` were recorded on the team laptop; their times and energies are that
   computer's, not yours.
 

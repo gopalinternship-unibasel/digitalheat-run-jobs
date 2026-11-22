@@ -7,7 +7,8 @@
     "unit": "passages",
     "per_s": 53.262464665070645,
     "j_per_unit": 0.37485104166666666,
-    "quality": "Quiet machine"
+    "quality": "Quiet machine",
+    "gflop_per_unit": 5.88617
    },
    {
     "key": "image",
@@ -15,7 +16,8 @@
     "unit": "photos",
     "per_s": 23.714360527446903,
     "j_per_unit": 0.8388625,
-    "quality": "Other programs were running, so the energy per item is an upper value"
+    "quality": "Other programs were running, so the energy per item is an upper value",
+    "gflop_per_unit": 8.817623
    },
    {
     "key": "render",
@@ -23,16 +25,30 @@
     "unit": "tiles",
     "per_s": 280.3719793880554,
     "j_per_unit": 0.07323877693755,
-    "quality": "One run of about a minute"
+    "quality": "One run of about a minute",
+    "gflop_per_unit": 0.014123
    },
    {
     "key": "caption",
     "label": "Photo descriptions",
     "unit": "photos",
-    "per_s": 0.16973125884016974,
-    "j_per_unit": null,
-    "quality": "Timed once, with the model's start-up included; energy not measured yet"
+    "per_s": 0.1979,
+    "j_per_unit": 52.422,
+    "quality": "24 photos in one run, described one after another, at 10 W of processor power on average; other programs were running, so the energy per item is an upper value for that power",
+    "gflop_per_unit": 469.878485
    }
-  ]
+  ],
+  "llm": {
+   "key": "llm",
+   "label": "Text generation",
+   "unit": "tokens",
+   "answers": 4,
+   "tokens": 163,
+   "per_s": 9.3295,
+   "tokens_per_s_writing": 10.18,
+   "j_per_unit": 2.1652,
+   "quality": "4 example requests, answered once each, at 20 W of processor power on average; whether other programs were running is not known",
+   "gflop_per_unit": 2.659501
+  }
  }
 }

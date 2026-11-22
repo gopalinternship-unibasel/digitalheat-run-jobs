@@ -17,6 +17,9 @@ POST /api/caption                            body: the raw image file; returns o
 POST /api/llm/generate                       body {"prompt": "..."}; the answer comes back while it is written,
                                              one JSON object per line
 GET  /thumbs/<signature>.jpg                 a downloaded thumbnail (memobase/download_thumbs.py)
+
+Answers computed by a model or by the tile arithmetic carry "work": seconds, joules and watts from the computer's
+meter (dh/meter.py) and the operations (FLOPs) of the answer, counted while it is computed (dh/flops.py).
 """
 from __future__ import annotations
 
@@ -62,8 +65,9 @@ def load_caption_model() -> None:
         _caption_state.update(loading=True, error=None)
         t0 = time.perf_counter()
         try:
+            from dh import flops
             from workers.jobs import load_captioner
-            load_captioner()                       # switches the network guard on first (jobs.ensure_offline)
+            flops.watch(load_captioner()[1])       # load_captioner switches the network guard on first (jobs.ensure_offline)
             _caption_state.update(loaded=True, load_s=round(time.perf_counter() - t0, 1))
         except Exception as e:  # noqa: BLE001 - reported to the page
             import traceback
@@ -99,15 +103,16 @@ def describe(data: bytes, filename: str) -> tuple[int, dict]:
     if not _caption_state["loaded"]:
         return 500, {"error": _caption_state["error"] or "the description model could not be loaded"}
     from workers.jobs import caption_images
-    from dh import meter
+    from dh import flops, meter
     with _caption_lock:
         before = len(no_network.attempts)
-        with meter.Span() as span:
+        with meter.Span() as span, flops.Count() as count:      # operations counted while the sentence is written
             text = caption_images([img])[0]
         secs = span.seconds
         blocked = len(no_network.attempts) - before
     out = {"description": text, "seconds": round(secs, 2), "width": w, "height": h, "offline": caption_evidence(),
-           "blocked_during": blocked, "work": span.figures()}
+           "blocked_during": blocked,       # without a count: the measured mean per photo, if there is one
+           "work": span.figures(count.total or (meter.counts().get("caption") or {}).get("flops_per_unit"))}
     stem = Path(filename).stem
     rec = manifest().get(stem)
     if rec:

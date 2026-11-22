@@ -79,7 +79,13 @@ export interface Workloads {
   matmul: { gflop_per_s: number; watts: number; gflop_per_joule: number };
   server: { label: string; cores: number; clock_ghz: number; flops_per_cycle: number; peak_tflop_per_s: number;
             wall_w: number; gflop_per_joule: number };
-  eta_transfer: number; jobs: Workload[];
+  eta_transfer: number; jobs: Workload[]; llm?: LlmMeasured;
+}
+/** Text generation, measured on the page's example requests (python -m dh.measure llm). The unit is one written
+ *  token, the end marker included; reading the request is part of the work. */
+export interface LlmMeasured {
+  answers: number; tokens: number; per_s: number; tokens_per_s_writing: number | null; j_per_unit: number | null;
+  gflop_per_unit: number | null; quality: string;
 }
 export interface LiveHour {
   hour: number; n_on: number; real_job: "run" | "pause"; reason: string; demand_kwh: number; soc_kwh: number;
@@ -200,7 +206,7 @@ export const useSearch = (q: string, enabled: boolean) =>
   useQuery({ queryKey: ["search", q], enabled: enabled && q.trim().length > 1, retry: false, staleTime: Infinity,
              queryFn: () => getJson<{ query: string; results: SearchHit[] }>(`/api/search?k=12&q=${encodeURIComponent(q)}`) });
 export interface SavedDescription {
-  creator?: string;
+  creator?: string; work?: Work;
   signature: string; description: string; title: string; date: string; institution: string; licence: string;
   licence_url: string; object_url: string;
 }
@@ -208,7 +214,8 @@ export const useDescribeDemo = (enabled: boolean) =>
   useQuery({ queryKey: ["describe-demo"], enabled, staleTime: Infinity,
              queryFn: () => getJson<SavedDescription[]>("/data/describe_demo.json") });
 // ---- Run jobs page: the three other job types, live (dh/tryjobs.py) -------------------------------
-/** What one answer cost on the laptop: time, processor energy from its own meter, arithmetic operations (calculated). */
+/** What one answer cost on the laptop: time, energy from the computer's own meter, and the arithmetic operations
+ *  counted while it was computed (dh/flops.py; tiles: from the picture). */
 export interface Work {
   seconds: number; joules: number | null; watts: number | null; flops: number | null; scope?: "processor" | "computer";
 }
@@ -247,6 +254,8 @@ export const useLlmStatus = (enabled: boolean) =>
     refetchInterval: (q) => (q.state.data?.llm?.loaded || q.state.data?.llm?.error ? 15000 : 1000),
   });
 export interface LlmDone {
+  /** tokens: of the answer's text; produced: all the model wrote, the end marker included. */
+  produced?: number;
   tokens: number; prompt_tokens: number; first_token_s: number | null; writing_s: number; tokens_per_s: number | null;
   seconds: number; stopped: boolean; hit_limit: boolean; model?: string; work?: Work;
 }
@@ -312,6 +321,8 @@ export type PhotoHit = Omit<SearchHit, "score"> & { score?: number };
 export interface PhotoSimilar {
   query?: PhotoHit; encode_seconds?: number; rank_seconds: number; photos: number; photos_shown: number;
   results: PhotoHit[]; width?: number; height?: number; work?: Work;
+  /** An archive photo: operations of the comparison alone, and what its stored vector took the indexing job. */
+  compare_flops?: number; vector_flops?: number | null;
 }
 export const usePhotoSample = (seed: number, enabled: boolean) =>
   useQuery({ queryKey: ["photo-sample", seed], enabled, retry: false, staleTime: Infinity,
@@ -330,7 +341,7 @@ export async function similarToUpload(file: File): Promise<PhotoSimilar> {
 }
 export interface TryDemo {
   text: Record<string, EmbedResult>;
-  photos: { query: PhotoHit; results: PhotoHit[] }[];
+  photos: { query: PhotoHit; results: PhotoHit[]; rank_seconds?: number; compare_flops?: number; vector_flops?: number | null }[];
   photo_count?: number; photos_shown?: number;
   llm?: Partial<LlmFacts> & { answers: SavedAnswer[] };
   tiles: { name: string; file: string; seconds: number; width: number; height: number; iters: number; pixels: number;

@@ -9,7 +9,8 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   HERE, licenceName, similarToUpload, useApiHealth, useCaptionStatus, useEmbedSearch, useJobsStatus, useLlmStatus,
   useMeter, usePhotoSample, usePhotoSimilar, useSummary, useTryDemo, writeAnswer,
-  type EmbedHit, type EmbedResult, type JobsStatus, type LlmDone, type PhotoHit, type PhotoSimilar, type TryDemo, type Workload,
+  type EmbedHit, type EmbedResult, type JobsStatus, type LlmDone, type LlmMeasured, type PhotoHit, type PhotoSimilar, type TryDemo,
+  type Workload,
 } from "../data";
 import { dec, gflop, int, joule, ops } from "../format";
 import { Badge, Effort, LoadError, Loading, PageHead } from "../components/ui";
@@ -65,7 +66,7 @@ function Facts({ job, net, children }: { job?: Workload; net?: Net; children?: R
   return (
     <dl className="run-facts">
       {children}
-      {job ? <div><dt>Measured for this job</dt><dd>{job.per_s >= 1 ? `${dec(job.per_s, 1)} ${job.unit} a second` : `${dec(1 / job.per_s, 1)} seconds per ${one(job.unit)}`}{job.j_per_unit != null ? <>, {dec(job.j_per_unit, 3)}{NB}J per {one(job.unit)}</> : null}</dd></div> : null}
+      {job ? <div><dt>Measured for this job</dt><dd>{job.per_s >= 1 ? `${dec(job.per_s, 1)} ${job.unit} a second` : `${dec(1 / job.per_s, 1)} seconds per ${one(job.unit)}`}{job.j_per_unit != null ? <>, {job.j_per_unit < 10 ? `${dec(job.j_per_unit, 3)}${NB}J` : joule(job.j_per_unit)} per {one(job.unit)}</> : null}{job.gflop_per_unit != null ? <>, {ops(job.gflop_per_unit * 1e9)} FLOPs per {one(job.unit)}</> : null}</dd></div> : null}
       {job?.quality ? <div><dt>Measurement note</dt><dd>{job.quality}</dd></div> : null}
       {net ? <div><dt>Outside network</dt><dd>{netText(net)}</dd></div> : null}
     </dl>
@@ -192,6 +193,18 @@ function PhotoCredit({ hit }: { hit: PhotoHit }) {
   );
 }
 
+/** An archive photo needs no model run: what is computed is the comparison alone. Its stored vector was the work of
+ *  the photo-indexing job, whose measured figures per photo are named beside it. */
+function StoredVector({ compare, vector, job }: { compare?: number; vector?: number | null; job?: Workload }) {
+  if (compare == null) return null;
+  return (
+    <>
+      {" "}The comparison itself is {ops(compare)} FLOPs, too brief for an energy reading.
+      {vector ? <> The photo's own vector took the photo-indexing job about <b>{ops(vector)} FLOPs</b> when the archive was indexed{job?.j_per_unit != null ? <>; the job's measured run averaged {dec(job.j_per_unit, 2)}{NB}J a photo</> : null}.</> : null}
+    </>
+  );
+}
+
 /** A thumbnail that is not on this computer (they are downloaded separately) leaves its frame empty. */
 const hideMissing = (e: SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.visibility = "hidden"; };
 
@@ -297,7 +310,7 @@ function PhotoPanel({ live, status, job, demo }: { live: boolean; status?: JobsS
                   <PhotoCredit hit={query} />
                   <span className="run-readout" aria-live="polite">
                     {similar.isError ? "The job did not answer."
-                      : similar.data && !similar.isPlaceholderData ? <>Compared with the {int(similar.data.photos_shown - 1)} other photos in <b>{ms(similar.data.rank_seconds)}</b>.</>
+                      : similar.data && !similar.isPlaceholderData ? <>Compared with the {int(similar.data.photos_shown - 1)} other photos in <b>{ms(similar.data.rank_seconds)}</b>.<StoredVector compare={similar.data.compare_flops} vector={similar.data.vector_flops} job={job} /></>
                       : "Comparing…"}
                   </span>
                 </div>
@@ -330,7 +343,7 @@ function PhotoPanel({ live, status, job, demo }: { live: boolean; status?: JobsS
               <PhotoCredit hit={demo.photos[savedAt].query} />
             </div>
           </div>
-          <p className="run-readout">The photos whose vectors from the job are closest to this photo's{shownCount ? `, among the ${int(shownCount - 1)} other photos without extra conditions of use` : ""}.</p>
+          <p className="run-readout">The photos whose vectors from the job are closest to this photo's{shownCount ? `, among the ${int(shownCount - 1)} other photos without extra conditions of use` : ""}.<StoredVector compare={demo.photos[savedAt].compare_flops} vector={demo.photos[savedAt].vector_flops} job={job} /></p>
           <ul className="jobs-grid run-photos">
             {demo.photos[savedAt].results.map((h) => <PhotoCard key={h.signature} hit={h} live={false} />)}
           </ul>
@@ -612,6 +625,16 @@ function Running({ since }: { since: number }) {
 const wordsIn = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
 /** The model sometimes marks words as bold in Markdown although it is told not to; the page shows plain text. */
 const plain = (s: string) => s.replace(/\*\*/g, "").replace(/[ \t]+\n/g, "\n");
+/** Energy and operations of an answer per written token (the end marker counts as one, as in the measured
+ *  figure of the fact box). Reading the request is inside: a short answer to a long request costs more per token. */
+const perToken = (d: LlmDone) => {
+  const written = d.produced ?? d.tokens;
+  if (!d.work || written <= 0 || (d.work.joules == null && d.work.flops == null)) return null;
+  return (
+    <> That is {[d.work.joules != null ? `${dec(d.work.joules / written, 2)}${NB}J` : null, d.work.flops != null ? `${ops(d.work.flops / written)} FLOPs` : null].filter(Boolean).join(" and ")} per
+      written token, reading the request included.</>
+  );
+};
 const figures = (d: LlmDone) => (
   <>
     {d.first_token_s != null ? <>First token after {ms(d.first_token_s)}. </> : null}
@@ -622,7 +645,7 @@ const figures = (d: LlmDone) => (
   </>
 );
 
-function LlmPanel({ live, demo }: { live: boolean; demo?: TryDemo }) {
+function LlmPanel({ live, demo, measured }: { live: boolean; demo?: TryDemo; measured?: LlmMeasured }) {
   const status = useLlmStatus(live);
   const st = status.data?.llm;
   const older = live && !!status.data && !status.data.llm;        // a service started before this panel existed
@@ -671,7 +694,9 @@ function LlmPanel({ live, demo }: { live: boolean; demo?: TryDemo }) {
         <Facts net={live ? status.data?.offline : undefined}>
           {live ? <div><dt>Language model</dt><dd>{older ? "not in the running local service: restart the service" : st?.error ? `could not be loaded: ${st.error}` : st?.loaded ? `ready on ${HERE}` : `loading on ${HERE}`}</dd></div> : null}
           {live && st?.measured_tokens_per_s ? <div><dt>Speed when it loaded</dt><dd>{dec(st.measured_tokens_per_s, 1)} tokens a second</dd></div> : null}
-          <div><dt>In the heat schedule</dt><dd>not yet: no batch job, no energy measurement</dd></div>
+          {measured ? <div><dt>Measured on {int(measured.answers)} requests</dt><dd>{measured.tokens_per_s_writing != null ? `${dec(measured.tokens_per_s_writing, 1)} tokens a second` : `${int(measured.tokens)} tokens`}{measured.j_per_unit != null ? <>, {dec(measured.j_per_unit, 2)}{NB}J</> : null}{measured.gflop_per_unit != null ? <>{measured.j_per_unit != null ? " and" : ","} {ops(measured.gflop_per_unit * 1e9)} FLOPs</> : null}{measured.j_per_unit != null || measured.gflop_per_unit != null ? " per written token, reading the request included" : ""}</dd></div> : null}
+          {measured?.quality ? <div><dt>Measurement note</dt><dd>{measured.quality}</dd></div> : null}
+          <div><dt>In the heat schedule</dt><dd>not yet: it has no batch job there</dd></div>
         </Facts>
       </div>
       {live ? (
@@ -699,7 +724,7 @@ function LlmPanel({ live, demo }: { live: boolean; demo?: TryDemo }) {
           <p className="run-readout">
             {phase === "writing" ? (answer ? <>Writing: {int(wordsIn(answer))} words so far, <Running since={since} />.</>
                 : st?.loaded ? <>Reading the request, <Running since={since} />.</> : `Loading the language model on ${HERE} (once), then writing…`)
-              : done ? <>{phase === "stopped" ? "Stopped. " : ""}{figures(done)} <Effort w={done.work} /></>
+              : done ? <>{phase === "stopped" ? "Stopped. " : ""}{figures(done)} <Effort w={done.work} />{perToken(done)}</>
               : phase === "stopped" ? `Stopped after ${int(wordsIn(answer))} words.`
               : "Enter sends the request; Shift and Enter start a new line."}
           </p>
@@ -719,7 +744,7 @@ function LlmPanel({ live, demo }: { live: boolean; demo?: TryDemo }) {
             <p className="run-answer-q">{saved[savedAt].prompt}</p>
             <p className="run-answer-a">{plain(saved[savedAt].text)}</p>
           </div>
-          <p className="run-readout">Written on the team laptop. {figures(saved[savedAt])} <Effort w={saved[savedAt].work} /></p>
+          <p className="run-readout">Written on the team laptop. {figures(saved[savedAt])} <Effort w={saved[savedAt].work} />{perToken(saved[savedAt])}</p>
           <p className="run-credit">
             {facts?.model ? <>The model is {facts.model}, an open model under the {facts.licence} licence, in one fixed version, on {facts.threads} processor threads. </> : null}
             A token is a word or a piece of a word. A model this small often writes things that sound right and are wrong.
@@ -774,7 +799,9 @@ function MeterStrip() {
         {d.machine?.cores ? <> This computer's processor has {d.machine.cores} cores{d.machine.logical && d.machine.logical !== d.machine.cores ? <> ({d.machine.logical} threads)</> : null}; the jobs compute on {d.machine.threads} threads.</> : null}{" "}
         Under each answer: the energy {whole ? "the computer" : "the processor"} took while it was computed, and the arithmetic operations it
         needed, in FLOPs (one addition or multiplication of two decimal numbers each; a GFLOP is a billion of them).
-        The FLOPs are calculated, not read from the hardware. All of the energy ends up as heat.
+        The FLOPs are counted from the sizes of the multiplications the job really did, in its weight layers and its
+        attention steps (for tiles, from the picture); they are not read from the hardware. All of the energy ends
+        up as heat.
       </p>
     </div>
   );
@@ -826,7 +853,7 @@ export function RunView() {
       {job === "image" ? <PhotoPanel live={live} status={status.data} job={w("image")} demo={demo.data} /> : null}
       {job === "render" ? <RenderPanel live={live} status={status.data} job={w("render")} demo={demo.data} /> : null}
       {job === "caption" ? <DescribePanel facts={<CaptionFacts job={w("caption")} live={live} />} /> : null}
-      {job === "llm" && !health.isLoading ? <LlmPanel live={live} demo={demo.data} /> : null}
+      {job === "llm" && !health.isLoading ? <LlmPanel live={live} demo={demo.data} measured={s.data?.workloads.llm} /> : null}
     </>
   );
 }

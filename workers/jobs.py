@@ -54,7 +54,8 @@ _clip = None
 _captioner = None
 _writer = None
 # The small language model of the "Text generation" panel (dashboard, Run jobs). It is not one of the job types of
-# the heat schedule: no batch job, no energy measurement. Model and version are fixed; see WRITER_NOTE.
+# the heat schedule: it has no batch job there (dh/measure.py times it on the page's example requests). Model and
+# version are fixed.
 WRITER_ID = "Qwen/Qwen3-0.6B"                 # 0.6 B parameters, Apache-2.0 licence, 1.5 GB weights
 WRITER_REVISION = "c1899de289a04d12100db370d81485cdf75e47ca"   # pinned version
 WRITER_PARAMS, WRITER_LICENCE = "0.6 billion", "Apache-2.0"

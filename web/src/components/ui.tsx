@@ -118,7 +118,8 @@ export function LoadError({ what, error }: { what: string; error: unknown }) {
 }
 
 /** What one answer cost on the laptop, as a sentence: the processor's energy while it was computed (from the
- *  laptop's own meter) and the arithmetic operations it needed (calculated). Nothing when neither is known. */
+ *  laptop's own meter) and the arithmetic operations it needed (counted while it was computed). Nothing when
+ *  neither is known. */
 export function Effort({ w }: { w?: Work | null }) {
   if (!w || (w.joules == null && w.flops == null)) return null;
   return (

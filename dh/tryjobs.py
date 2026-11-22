@@ -12,9 +12,15 @@ render  A view of the Mandelbrot set is rendered with the arithmetic of the tile
         and returned as a PNG.
 
 llm     A request is answered by a small open language model (workers.jobs.write_text), piece by piece. This
-        one is not a job type of the heat schedule: it has no batch job and no energy measurement.
+        one is not a job type of the heat schedule: it has no batch job there. dh/measure.py times it on the
+        page's example requests.
+
+Every answer of a model carries its operations, counted while it is computed (dh/flops.py).
 
     python -m dh.tryjobs --demo      # saved examples for a copy of the dashboard without the local service
+                                     # (the photos of the saved descriptions are described again, with figures)
+    python -m dh.tryjobs --describe  # only that last part: the saved descriptions again, with figures
+    python -m dh.tryjobs --recount   # keep the saved times and energies, count the operations of the saved answers again
 """
 from __future__ import annotations
 
@@ -36,12 +42,13 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from dh import meter  # noqa: E402
+from dh import flops, meter  # noqa: E402
 ASSUMPTIONS = ROOT / "web" / "public" / "data" / "assumptions.json"
 THUMBS = ROOT / "data" / "memobase" / "thumbs"
 TAGS = ROOT / "data" / "memobase" / "tags.csv"
 PEOPLE_TAGS = {"Porträt", "Gruppe", "Fest"}     # tags of memobase/search.py tag_all that mostly mean people
 DEMO_OUT = ROOT / "web" / "public" / "data"
+DESCRIBE_DEMO = DEMO_OUT / "describe_demo.json"
 LLM_EXAMPLES = ROOT / "web" / "src" / "llm_examples.json"      # the example requests of the page (one source)
 SIG_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,120}$")
 EMBED_MODEL = "all-MiniLM-L6-v2"
@@ -120,6 +127,7 @@ def _load_embed() -> None:
     from workers.jobs import ensure_offline, load_embedder
     ensure_offline()
     model = load_embedder()
+    flops.watch(model)
     entries = json.loads(ASSUMPTIONS.read_text(encoding="utf-8"))
     texts = [" ".join(str(x) for x in (e.get("label"), e.get("note"), e.get("source")) if x) for e in entries]
 
@@ -168,6 +176,7 @@ def _load_photo() -> None:
     ensure_offline()
     _load_index()
     model = load_clip()
+    flops.watch(model)
     model.encode([Image.new("RGB", (224, 224))], batch_size=1, convert_to_numpy=True, show_progress_bar=False)   # warm-up
     _photo["model"] = model
 
@@ -222,7 +231,7 @@ def _load_llm() -> None:
     """Load the model, write a few words to warm up, then time a short answer: the speed the page shows as
     'measured when the model loaded'."""
     from workers import jobs
-    jobs.load_writer()
+    flops.watch(jobs.load_writer()[1])
     jobs.write_text("Say hello.", max_new_tokens=8)
     timed = jobs.write_text("Count from one to twenty in words.", max_new_tokens=40)
     _llm["weights"] = meter.writer_weights(jobs.load_writer()[1])
@@ -237,8 +246,12 @@ def clean_prompt(prompt: str) -> str:
     return "\n".join(" ".join(line.split()) for line in kept.split("\n")).strip()[:MAX_PROMPT]
 
 
-def llm_work(span, out: dict) -> dict:
-    """Energy of one answer and the operations of its matrix products."""
+def llm_work(span, out: dict, count=None) -> dict:
+    """Energy of one answer and its operations: counted while it was written (dh/flops.py, weight and attention
+    products). Without a count, the products with the weights by formula (meter.writer_flops), which the weight
+    part of the count equals exactly."""
+    if count is not None and count.total:
+        return span.figures(count.total)
     body, head = _llm["weights"]
     return span.figures(meter.writer_flops(body, head, int(out["prompt_tokens"]), int(out.get("produced") or out["tokens"])))
 
@@ -270,11 +283,11 @@ def llm_stream(prompt: str, max_tokens: int | None = None):
 
         def work():
             try:
-                with meter.Span() as span:
+                with meter.Span() as span, flops.Count() as count:     # the count belongs to this thread
                     out = jobs.write_text(prompt, max_new_tokens=limit, on_text=lambda s: pieces.put({"text": s}), stop=stop.is_set)
                 out.pop("text", None)
                 pieces.put({"done": True, **out, "model": _llm["facts"]["model"], "offline": _evidence(),
-                            "work": llm_work(span, out)})
+                            "work": llm_work(span, out, count)})
             except Exception as e:  # noqa: BLE001 - the page gets a plain sentence, the details stay here
                 traceback.print_exception(type(e), e, e.__traceback__, file=sys.stderr)
                 pieces.put({"error": f"the language model could not answer ({type(e).__name__})"})
@@ -306,7 +319,7 @@ def embed_search(query: str, k: int = 8) -> tuple[int, dict]:
         return 500, {"error": _state["embed"]["error"] or "the text model could not be loaded"}
     with _locks["embed"]:
         tokens = int(_embed["model"].tokenize([query])["input_ids"].shape[1])
-        with meter.Span() as span:
+        with meter.Span() as span, flops.Count() as count:
             q = _embed["model"].encode([query], convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)[0]
         secs = span.seconds
     scores = _embed["vectors"] @ q.astype(np.float32)
@@ -318,7 +331,7 @@ def embed_search(query: str, k: int = 8) -> tuple[int, dict]:
                     "score": round(float(scores[j]), 4)})
     return 200, {"query": query, "seconds": round(secs, 4), "results": out, "corpus": _embed["corpus"],
                  "model": EMBED_MODEL, "offline": _evidence(), "tokens": tokens,
-                 "work": span.figures(meter.embed_flops(tokens))}
+                 "work": span.figures(count.total or meter.embed_flops(tokens))}
 
 
 # ------------------------------------------------------------------ photo indexing
@@ -366,8 +379,12 @@ def photo_similar_signature(sig: str, k: int = 12) -> tuple[int, dict]:
     if not SIG_RE.match(sig) or sig not in _photo["where"] or _photo["meta"][sig]["extra_conditions"] != "no":
         return 404, {"error": "no archive photo with this signature"}
     hits, secs = _nearest(_photo["vectors"][_photo["where"][sig]], k, skip=sig)
-    return 200, {"query": _hit(sig, None), "rank_seconds": round(secs, 4), "photos": len(_photo["sigs"]),
-                 "photos_shown": int(len(_photo["free"])), "results": hits}
+    # No model runs for an archive photo: its vector was computed by the photo-indexing job. What is done here is
+    # the comparison alone, far too brief for an energy reading; "vector_flops" is what the vector itself took.
+    return 200, {"query": _hit(sig, None), "rank_seconds": round(secs, 6), "photos": len(_photo["sigs"]),
+                 "photos_shown": int(len(_photo["free"])), "results": hits,
+                 "compare_flops": meter.rank_flops(len(_photo["free"]), int(_photo["vectors"].shape[1])),
+                 "vector_flops": meter.photo_flops()}
 
 
 def photo_similar_upload(data: bytes, k: int = 12) -> tuple[int, dict]:
@@ -379,16 +396,16 @@ def photo_similar_upload(data: bytes, k: int = 12) -> tuple[int, dict]:
     if not _state["photo"]["loaded"]:
         return 500, {"error": _state["photo"]["error"] or "the photo model could not be loaded"}
     with _locks["photo"]:
-        with meter.Span() as span:
+        with meter.Span() as span, flops.Count() as count:
             v = _photo["model"].encode([img], batch_size=1, convert_to_numpy=True, show_progress_bar=False,
                                        normalize_embeddings=True)[0].astype(np.float32)
         secs = span.seconds
     hits, rank = _nearest(v, k)
-    one = meter.photo_flops()
-    flops = None if one is None else one + meter.rank_flops(len(_photo["free"]), int(v.shape[0]))
+    one = count.total or meter.photo_flops()            # counted on this photo; else the measured file's figure
+    total = None if not one else one + meter.rank_flops(len(_photo["free"]), int(v.shape[0]))
     return 200, {"encode_seconds": round(secs, 4), "rank_seconds": round(rank, 4), "width": w, "height": h,
                  "photos": len(_photo["sigs"]), "photos_shown": int(len(_photo["free"])), "results": hits,
-                 "offline": _evidence(), "work": span.figures(flops)}
+                 "offline": _evidence(), "work": span.figures(total)}
 
 
 # ------------------------------------------------------------------ tile rendering
@@ -467,7 +484,8 @@ def write_demo() -> dict:
     (thumbs / ".gitkeep").write_text("", encoding="utf-8")
     for s in starts:
         r = photo_similar_signature(s, 6)[1]
-        photos.append({"query": r["query"], "results": r["results"]})
+        photos.append({"query": r["query"], "results": r["results"], "rank_seconds": r["rank_seconds"],
+                       "compare_flops": r["compare_flops"], "vector_flops": r["vector_flops"]})
         for h in [r["query"], *r["results"]]:
             shutil.copyfile(THUMBS / f"{h['signature']}.jpg", thumbs / f"{h['signature']}.jpg")
     tiles = []
@@ -484,16 +502,94 @@ def write_demo() -> dict:
         from workers import jobs
         answers = []
         for x in json.loads(LLM_EXAMPLES.read_text(encoding="utf-8")):
-            with meter.Span() as span:
+            with meter.Span() as span, flops.Count() as count:
                 out = jobs.write_text(x["prompt"])
-            answers.append({"label": x["label"], "prompt": x["prompt"], **out, "work": llm_work(span, out)})
+            answers.append({"label": x["label"], "prompt": x["prompt"], **out, "work": llm_work(span, out, count)})
         demo["llm"] = {**_llm["facts"], "answers": answers}
     (DEMO_OUT / "tryjobs_demo.json").write_text(json.dumps(demo, ensure_ascii=False), encoding="utf-8")
     return demo
 
 
+def write_describe_demo() -> dict | None:
+    """Describe the photos of the saved descriptions again on this computer and record what each sentence took:
+    time, energy and operations (web/public/data/describe_demo.json). The photos stay the same; a sentence
+    changes only if this computer writes a different one. None when the description model or one of the
+    thumbnails is not on this computer (the file is then left as it is)."""
+    from PIL import Image
+
+    from workers import jobs
+    rows = json.loads(DESCRIBE_DEMO.read_text(encoding="utf-8"))
+    files = [THUMBS / f"{r['signature']}.jpg" for r in rows]
+    if not rows or not all(f.exists() for f in files):
+        return None
+    try:
+        flops.watch(jobs.load_captioner()[1])
+    except Exception as e:  # noqa: BLE001 - the model is not here: keep the recording
+        print(_plain(e, "the description model"), file=sys.stderr)
+        return None
+
+    def photo(f):
+        with Image.open(f) as im:
+            return im.convert("RGB")
+    jobs.caption_images([photo(files[0])])                     # the first call warms up; it is not recorded
+    changed = 0
+    for r, f in zip(rows, files):
+        img = photo(f)
+        with meter.Span() as span, flops.Count() as count:
+            text = jobs.caption_images([img])[0]
+        changed += text != r.get("description")
+        r["description"] = text
+        r["work"] = span.figures(count.total or None)
+    DESCRIBE_DEMO.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    return {"photos": len(rows), "changed": changed}
+
+
+def recount_demo() -> dict:
+    """Renew in the saved answers what does not depend on the state of the computer, and keep what was recorded.
+    Operation counts, token counts and the order of the closest entries depend only on the input, the model and
+    the data, so they are worked out again here; the recorded times and energies stay as they are (a saved photo
+    comparison that has no time yet gets one). An answer of the language model is recounted only if this computer
+    writes the same text again (the count belongs to that text)."""
+    demo = json.loads((DEMO_OUT / "tryjobs_demo.json").read_text(encoding="utf-8"))
+    done = {"text": 0, "photos": 0, "llm": 0, "llm_different": 0}
+    for q, v in demo.get("text", {}).items():
+        new = embed_search(q, 5)[1]
+        if v.get("work") and (new.get("work") or {}).get("flops"):
+            v["work"]["flops"], v["tokens"], v["results"] = new["work"]["flops"], new["tokens"], new["results"]
+            done["text"] += 1
+    for p in demo.get("photos", []):
+        code, r = photo_similar_signature(p["query"]["signature"], len(p["results"]))
+        if code == 200:
+            p.setdefault("rank_seconds", r["rank_seconds"])
+            p.update(compare_flops=r["compare_flops"], vector_flops=r["vector_flops"])
+            done["photos"] += 1
+    answers = (demo.get("llm") or {}).get("answers") or []
+    if answers:
+        _load("llm")
+    if answers and _state["llm"]["loaded"]:
+        from workers import jobs
+        for a in answers:
+            with flops.Count() as count:
+                out = jobs.write_text(a["prompt"])
+            if out["text"] == a["text"] and a.get("work") and count.total:
+                a["work"]["flops"] = float(count.total)
+                done["llm"] += 1
+            else:
+                done["llm_different"] += 1
+    (DEMO_OUT / "tryjobs_demo.json").write_text(json.dumps(demo, ensure_ascii=False), encoding="utf-8")
+    return done
+
+
 if __name__ == "__main__":
+    if "--recount" in sys.argv:
+        d = recount_demo()
+        print(f"saved examples recounted: {d['text']} searches, {d['photos']} photo comparisons, {d['llm']} answers"
+              + (f"; {d['llm_different']} answers left as they were (this computer writes a different text)" if d["llm_different"] else ""))
     if "--demo" in sys.argv:
         d = write_demo()
         print(f"saved examples: {len(d['text'])} searches, {len(d['photos'])} photo comparisons, {len(d['tiles'])} views "
               f"-> {DEMO_OUT.relative_to(ROOT)}")
+    if "--demo" in sys.argv or "--describe" in sys.argv:
+        s = write_describe_demo()
+        print("saved descriptions: left as they are (the description model or the thumbnails are not on this computer)"
+              if s is None else f"saved descriptions: {s['photos']} photos described again, {s['changed']} sentences changed")

@@ -4,7 +4,7 @@ import { DataTable } from "../components/DataTable";
 import {
   describePhoto, HERE, licenceName, useApiHealth, useCaptionStatus, useDescribeDemo, type CaptionResult, type SavedDescription,
 } from "../data";
-import { int } from "../format";
+import { dec, int, joule, ops } from "../format";
 import { Effort } from "../components/ui";
 import "./describe.css";
 
@@ -20,6 +20,9 @@ const SAVED_COLS: ColumnDef<SavedDescription, any>[] = [
   { header: "What the job wrote", accessorKey: "description", enableSorting: false, cell: (c) => <strong className="ds-saved">{c.getValue<string>()}</strong> },
   { header: "The archive's title", accessorKey: "title", enableSorting: false, meta: { className: "prose" },
     cell: (c) => <>{c.getValue<string>()}<span className="ds-credit">{[c.row.original.date, c.row.original.creator, c.row.original.institution, licenceName(c.row.original.licence)].filter(Boolean).join(", ")}</span></> },
+  { header: "What it took", id: "work", enableSorting: false, meta: { className: "prose" },
+    accessorFn: (r) => (r.work ? [`${dec(r.work.seconds, 1)}${NB}s`, r.work.joules != null ? joule(r.work.joules) : null,
+      r.work.flops != null ? `${ops(r.work.flops)} FLOPs` : null].filter(Boolean).join(", ") : "–") },
   { header: "Photo", accessorKey: "object_url", enableSorting: false,
     cell: (c) => <a href={c.getValue<string>()} target="_blank" rel="noopener noreferrer">View on Memobase</a> },
 ];
@@ -119,7 +122,8 @@ export function DescribePanel({ facts }: { facts?: ReactNode }) {
           <h3>What the job wrote in its recorded run</h3>
           <p className="run-readout">
             {saved.data.length} archive photos, one sentence each, written on the team laptop with outside network
-            access blocked. The archive's own title stands beside each sentence; the photos themselves are on Memobase.
+            access blocked{saved.data.some((r) => r.work) ? `, with the time, the ${saved.data.some((r) => r.work?.scope === "computer") ? "energy of the whole computer" : "processor energy"} and the operations each sentence took` : ""}.
+            The archive's own title stands beside each sentence; the photos themselves are on Memobase.
           </p>
           <DataTable data={allSaved ? saved.data : saved.data.slice(0, 8)} columns={SAVED_COLS} caption="Sentences written by the photo-description job, beside the archive titles" />
           {saved.data.length > 8 ? (
@@ -195,7 +199,7 @@ export function DescribePanel({ facts }: { facts?: ReactNode }) {
           </li>
         ))}
       </ol>
-      {!items.length && !offline ? <p className="run-readout ds-empty">Each photo you choose appears here with one sentence that describes it and the time it took, newest first.</p> : null}
+      {!items.length && !offline ? <p className="run-readout ds-empty">Each photo you choose appears here with one sentence that describes it and the time, the energy and the operations it took, newest first.</p> : null}
       {!offline ? (
         <p className="run-credit">
           {off ? <>The model is Florence-2-base in one fixed version, loaded with the offline mode of its libraries {flagsOk ? "on" : "off"}, on {off.torch_threads} processor threads. </> : null}

@@ -57,5 +57,26 @@
   "precision": "FP64",
   "flops_per_unit": 14123193.308,
   "tiles": 2000
+ },
+ "caption": {
+  "unit": "photo",
+  "precision": "FP32",
+  "flops_per_unit": 469878484992,
+  "flops_per_unit_min": 468319451136,
+  "flops_per_unit_max": 471154292736,
+  "units": 24,
+  "weight_flops_per_unit": 450214674432,
+  "attention_flops_per_unit": 19663810560,
+  "attention_in_count": true,
+  "counted_by": "dh/flops.py while the model computed (weight and attention products), python -m dh.measure"
+ },
+ "llm": {
+  "unit": "token",
+  "precision": "FP32",
+  "flops_per_unit": 2659500937,
+  "flops_per_unit_min": 2234176853,
+  "flops_per_unit_max": 3333272052,
+  "units": 163,
+  "counted_by": "dh/flops.py while the model computed (weight and attention products), python -m dh.measure"
  }
 }

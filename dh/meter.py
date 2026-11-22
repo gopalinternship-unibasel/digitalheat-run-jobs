@@ -8,15 +8,14 @@ Energy comes from the computer's own meter, whichever of these it has:
 In every case the reading includes every program that is running, not this service alone. A request is metered by
 reading before and after it.
 
-Operations (FLOPs; one multiply-add counts as 2, as in measurements/count_flops.py) are calculated, not read from
-the hardware:
+Operations (FLOPs; one multiply-add counts as 2) are not read from the hardware:
 - tiles: exact, from the escape counts of the picture (every pixel takes |z| in every step: 4; every pixel still
   inside does z = z*z + c: 8);
-- text embeddings and photos: the counts of measurements/flops_per_unit.json (matrix products counted on the real
-  inputs of the measured runs), per token and per photo;
-- the language model: 2 per weight of the matrix products each token passes through, from the loaded model itself.
-The step that compares tokens with each other (attention) is not in these counts, except where the measured file
-adds it. Photo descriptions are not counted.
+- every answer of a model (text embeddings, photos, photo descriptions, the language model): counted while the
+  model computes, from the sizes of its weight products and attention products (dh/flops.py).
+The functions for operations in this file are the earlier figures per unit (measurements/flops_per_unit.json) and
+the formula for the language model's weights. The service falls back on them if a count comes back empty, and the
+tests hold the counts against them.
 """
 from __future__ import annotations
 
