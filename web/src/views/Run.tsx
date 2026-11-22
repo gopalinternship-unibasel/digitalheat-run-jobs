@@ -748,7 +748,7 @@ function MeterStrip() {
   const W = 260, H = 48, top = Math.max(12, ...d.series) * 1.08, n = d.series.length;
   const pts = d.series.map((v, i) => `${(W - (n - 1 - i) * (W / 119)).toFixed(1)},${(H - 3 - (v / top) * (H - 6)).toFixed(1)}`).join(" ");
   return (
-    <div className="run-meter" role="group" aria-label="Processor power of the laptop">
+    <div className="run-meter" role="group" aria-label="Processor power of this computer">
       <div className="run-meter-now">
         <span>Processor power now</span>
         <b>{dec(d.watts, 1)}{NB}W</b>
@@ -758,7 +758,7 @@ function MeterStrip() {
         <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
       <p className="run-meter-note">
-        Read from the laptop's own energy meter every half second; the line is the last minute
+        Read from this computer's own energy meter every half second; the line is the last minute
         {d.low != null && d.high != null ? <>, between {dec(d.low, 1)} and {dec(d.high, 1)}{NB}W</> : null}. It covers the
         processor only, with every program that is running.
         {d.machine?.cores ? <> This computer's processor has {d.machine.cores} cores{d.machine.logical && d.machine.logical !== d.machine.cores ? <> ({d.machine.logical} threads)</> : null}; the jobs compute on {d.machine.threads} threads.</> : null}{" "}

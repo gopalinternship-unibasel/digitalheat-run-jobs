@@ -464,6 +464,7 @@ def write_demo() -> dict:
     if thumbs.exists():
         shutil.rmtree(thumbs)
     thumbs.mkdir(parents=True)
+    (thumbs / ".gitkeep").write_text("", encoding="utf-8")
     for s in starts:
         r = photo_similar_signature(s, 6)[1]
         photos.append({"query": r["query"], "results": r["results"]})

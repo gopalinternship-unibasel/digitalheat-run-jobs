@@ -1,6 +1,7 @@
-// Data layer. Every number comes from files written by `python -m dh.export` (web/public/data) or from
-// the local Python API (`python -m dh.serve`, proxied under /api). Nothing is computed here except
-// formatting and simple selections.
+// Data layer. Every number comes from the files in web/public/data or from the local Python service
+// (`python -m dh.serve`, proxied under /api). `python -m dh.tryjobs --demo` rewrites tryjobs_demo.json; the other
+// files come from the full dashboard, and some hooks below belong to its other pages and are not used here.
+// Nothing is computed here except formatting and simple selections.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 export type Agg = { mean: number; min: number; max: number };

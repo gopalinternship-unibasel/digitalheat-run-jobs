@@ -239,9 +239,9 @@ class Interrupted(Exception):
 
 
 # Blocks of Florence-2 before which the interrupt check runs. The image encoder (DaViT) takes about 70 to 75 %
-# of a caption on the team laptop (measured on the team laptop), so checking only
-# between generated words left pauses waiting up to 4.6 s in the 15 July replay. Checking before every vision
-# block, text-encoder layer and decoder layer leaves at most about 0.41 s between two checks .
+# of a caption on the team laptop, so checking only
+# between generated words left pauses waiting up to 4.6 s in a replayed day of the full dashboard. Checking before
+# every vision block, text-encoder layer and decoder layer leaves at most about 0.41 s between two checks.
 _CHECK_BEFORE = ("Florence2VisionConvEmbed", "Florence2VisionSpatialBlock", "Florence2VisionChannelBlock",
                  "BartEncoderLayer", "BartDecoderLayer")
 

@@ -21,11 +21,14 @@ own process; the models are read from the local Hugging Face cache.
 
 ## What you need
 
-- Python 3.10 or newer (built with 3.13) and Node.js 20 or newer (built with 24).
+- Python 3.10 or newer (built with 3.13) and Node.js 20.19 or newer, or 22.12 or newer (built with 24).
 - About 4 GB of free disk space for the models and about 3 GB of free memory.
 - No graphics card: everything runs on the processor.
 
 ## Set it up (once)
+
+On macOS and Linux the command is often `python3`; a virtual environment gives you `python` and `pip`
+(`python3 -m venv .venv`, then activate it).
 
 ```bash
 pip install -r requirements.txt
@@ -36,7 +39,8 @@ npm install
 ```
 
 The thumbnails are not in this repository on purpose (see "Photos" below). Without them the photo panel still
-compares photos, but shows no pictures.
+compares photos, but shows no pictures. The download script rewrites `data/memobase/ids.txt` with the photos it
+fetched; the service does not read that file, so a changed `ids.txt` in `git status` is harmless.
 
 ## Run it
 
@@ -54,8 +58,9 @@ npm run dev                 # the page, http://127.0.0.1:5420/run
 Open `http://127.0.0.1:5420/run`. Each model loads the first time its panel is opened (a few seconds each).
 
 If the service is not running, the page still works: every panel then shows saved answers
-(`web/public/data/tryjobs_demo.json`, `describe_demo.json`). To refresh them with your own computer's figures, run
-`python -m dh.tryjobs --demo` after the thumbnails are downloaded.
+(`web/public/data/tryjobs_demo.json`, `describe_demo.json`). `python -m dh.tryjobs --demo`, run after the
+thumbnails are downloaded, rewrites `tryjobs_demo.json` and the three tile pictures with your own computer's figures;
+`describe_demo.json` is a fixed recording.
 
 ## Check it
 
@@ -76,6 +81,9 @@ cd web && npm run build     # type check and production build
 - **The connection:** the page calls relative addresses under `/api` and `/thumbs`. Send those to the service, as
   `web/vite.config.ts` does for the dev server.
 - **Threads:** the models compute on 4 threads; set the environment variable `DH_THREADS` to change that.
+- **Left over from the full dashboard:** `workers/jobs.py` and `memobase/search.py` are copied whole, so they also
+  hold batch functions (`embed_chunk`, `image_chunk`, `caption_chunk`) and a text search that need files or a model
+  that are not here. The page and the service do not use them.
 
 ## How the figures are made
 
@@ -92,11 +100,11 @@ cd web && npm run build     # type check and production build
 
 The photo panel uses 1,904 photos from Swiss archives, found through [Memobase](https://memobase.ch) (Memoriav). This
 repository contains their records (`data/memobase/manifest.csv`: title, date, creator, institution, licence and
-link), the vectors the photo-indexing job computed for them (`index_clip_b32.npz`) and automatic tags (`tags.csv`),
-but not the photos. `memobase/download_thumbs.py` fetches the thumbnails from Memobase onto your computer.
+link; it lists 1,956 records, of which 1,904 are indexed), the vectors the photo-indexing job computed for them
+(`index_clip_b32.npz`) and automatic tags (`tags.csv`), but not the photos. `memobase/download_thumbs.py` fetches the thumbnails from Memobase onto your computer.
 
 The page only ever shows the 668 photos whose record sets no extra conditions of use, each whole, with creator,
-institution, licence and a link to its record. Each photo stays under its own licence (Public Domain Mark, CC0,
+institution, licence and a link to its record. Each photo stays under its own licence (Public Domain Mark,
 CC BY or CC BY-SA, as its row in the manifest says).
 
 ## Models
