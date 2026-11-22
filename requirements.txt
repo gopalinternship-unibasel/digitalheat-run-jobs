@@ -1,0 +1,10 @@
+# The versions the project was built and tested with are given as lower bounds or exact pins.
+torch>=2.6
+transformers==4.57.3
+sentence-transformers==5.2.0
+huggingface_hub>=0.34
+numpy>=2.0
+pillow>=11.0
+psutil>=6.0
+requests>=2.31
+pytest>=8.0

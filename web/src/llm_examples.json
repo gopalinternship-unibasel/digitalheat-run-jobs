@@ -1,0 +1,6 @@
+[
+  { "label": "How a heat pump works", "prompt": "Explain in two sentences how a heat pump heats a house." },
+  { "label": "Summarise the idea", "prompt": "Summarise in one sentence: Small servers in the basement of a house do computing jobs for paying customers. Their waste heat goes into the house's heating and hot water. A scheduler runs the jobs when the house needs heat and pauses them when it does not." },
+  { "label": "Reasons to pause a job", "prompt": "Give three short reasons why a computing job might be paused." },
+  { "label": "A short poem", "prompt": "Write a four-line poem about a server that heats a house." }
+]

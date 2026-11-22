@@ -1,0 +1,38 @@
+{
+ "workloads": {
+  "jobs": [
+   {
+    "key": "embed",
+    "label": "Text embeddings",
+    "unit": "passages",
+    "per_s": 53.262464665070645,
+    "j_per_unit": 0.37485104166666666,
+    "quality": "Quiet machine"
+   },
+   {
+    "key": "image",
+    "label": "Photo indexing",
+    "unit": "photos",
+    "per_s": 23.714360527446903,
+    "j_per_unit": 0.8388625,
+    "quality": "Other programs were running, so the energy per item is an upper value"
+   },
+   {
+    "key": "render",
+    "label": "Tile rendering",
+    "unit": "tiles",
+    "per_s": 280.3719793880554,
+    "j_per_unit": 0.07323877693755,
+    "quality": "One run of about a minute"
+   },
+   {
+    "key": "caption",
+    "label": "Photo descriptions",
+    "unit": "photos",
+    "per_s": 0.16973125884016974,
+    "j_per_unit": null,
+    "quality": "Timed once, with the model's start-up included; energy not measured yet"
+   }
+  ]
+ }
+}

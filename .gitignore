@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+node_modules/
+web/dist/
+web/node_modules/
+
+# archive photos are fetched with memobase/download_thumbs.py, never committed
+data/memobase/thumbs/*
+!data/memobase/thumbs/.gitkeep
+web/public/data/thumbs/*
+!web/public/data/thumbs/.gitkeep
+data/memobase/thumbs_index.csv

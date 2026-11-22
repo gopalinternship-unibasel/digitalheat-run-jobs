@@ -1,0 +1,61 @@
+{
+ "convention": "1 multiply-add = 2 FLOPs; image and embed: matrix products and the patch convolution counted by torch FlopCounterMode, plus the attention products added analytically (attention_flops.py; the fused attention kernel was not counted on this CPU); render: analytic count, FP64",
+ "image": {
+  "unit": "photo",
+  "precision": "FP32",
+  "flops_per_unit": 8725463040.0,
+  "chunks_checked": [
+   0,
+   1,
+   59,
+   179
+  ],
+  "flops_per_chunk": 69803704320,
+  "ops_counted_chunk0": {
+   "aten.convolution": 1849688064,
+   "aten.addmm": 67947724800,
+   "aten.mm": 6291456
+  },
+  "attention_in_count": false,
+  "attention_flops_per_unit_analytic": 92160000,
+  "flops_per_unit_with_attention": 8817623040.0
+ },
+ "embed": {
+  "unit": "passage",
+  "precision": "FP32",
+  "flops_per_unit": 5308946841.6,
+  "flops_per_unit_min_chunk": 4650467328.0,
+  "flops_per_unit_max_chunk": 5436112896.0,
+  "chunks": 180,
+  "max_seq_length": 256,
+  "padded_tokens_per_chunk_mean": 250.01111111111112,
+  "real_tokens_per_passage_mean": 218.44600694444443,
+  "ops_counted_chunk0": {
+   "aten.addmm": 173955612672
+  },
+  "attention_in_count": false,
+  "attention_flops_per_unit_analytic": 577223065.6,
+  "flops_per_unit_with_attention": 5886169907.200001
+ },
+ "render": {
+  "unit": "tile",
+  "precision": "FP64",
+  "flops_per_unit": 14123447.32,
+  "tiles": 7200,
+  "flops_per_unit_min": 10421752,
+  "flops_per_unit_max": 22280920,
+  "convention": "4 FLOPs for |z| on every pixel-iteration, 8 for z*z+c on pixels inside"
+ },
+ "render_live_1000": {
+  "unit": "tile",
+  "precision": "FP64",
+  "flops_per_unit": 14123110.192,
+  "tiles": 1000
+ },
+ "render_live_2000": {
+  "unit": "tile",
+  "precision": "FP64",
+  "flops_per_unit": 14123193.308,
+  "tiles": 2000
+ }
+}
