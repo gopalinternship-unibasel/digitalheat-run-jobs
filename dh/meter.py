@@ -1,9 +1,12 @@
 """Live figures for the dashboard's "Run jobs" page: the processor's power while the laptop works, the energy of
 one request, and how many arithmetic operations a request takes.
 
-Energy comes from the processor's own meter as Windows exposes it (EMI, bench/emi.py): the processor package only,
-not screen, fans or charger losses, and with every program that is running, not this service alone. A reading
-costs a few microseconds, so a request is metered by reading the counter before and after it.
+Energy comes from the computer's own meter, whichever of these it has:
+- Windows: the processor's energy counter through EMI (bench/emi.py): the processor package only;
+- Linux: the same counter through /sys/class/powercap (RAPL), where the system lets a normal user read it;
+- macOS: the power of the whole computer as its battery controller reports it (ioreg), summed up over time.
+In every case the reading includes every program that is running, not this service alone. A request is metered by
+reading before and after it.
 
 Operations (FLOPs; one multiply-add counts as 2, as in measurements/count_flops.py) are calculated, not read from
 the hardware:
@@ -18,6 +21,10 @@ adds it. Photo descriptions are not counted.
 from __future__ import annotations
 
 import json
+import os
+import plistlib
+import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -35,17 +42,120 @@ _thread: threading.Thread | None = None
 _guard = threading.Lock()
 
 
+class RaplMeter:
+    """Linux: the processor package's cumulative energy counter. read() gives (microjoules, nanoseconds)."""
+    scope, source = "processor", "the processor's energy counter (Linux RAPL)"
+
+    def __init__(self, base: Path = Path("/sys/class/powercap/intel-rapl:0")):
+        self._file = base / "energy_uj"
+        self._range = int((base / "max_energy_range_uj").read_text())
+        self.read()
+
+    def read(self) -> tuple[int, int]:
+        return int(self._file.read_text()), time.monotonic_ns()
+
+    def joules(self, a, b) -> float:
+        d = b[0] - a[0]
+        return (d + self._range if d < 0 else d) / 1e6      # the counter starts again at zero when it is full
+
+    @staticmethod
+    def seconds(a, b) -> float:
+        return (b[1] - a[1]) / 1e9
+
+
+def mac_watts(plist: bytes) -> float | None:
+    """Power of the whole computer in watts from `ioreg -r -n AppleSmartBattery -a`, or None when it gives none.
+    First choice is the controller's own figure for the system (PowerTelemetryData.SystemLoad, in milliwatts);
+    otherwise, on battery only, voltage times current. Values outside 0.3 to 400 W are not believed."""
+    try:
+        rows = plistlib.loads(plist)
+        d = rows[0] if isinstance(rows, list) and rows else {}
+    except Exception:  # noqa: BLE001 - no battery controller, or an answer that is not a property list
+        return None
+
+    def ok(w):
+        return w if isinstance(w, (int, float)) and 0.3 <= w <= 400 else None
+    load = (d.get("PowerTelemetryData") or {}).get("SystemLoad")
+    if isinstance(load, int) and ok(load / 1000) is not None:
+        return load / 1000
+    volts, amps = d.get("Voltage"), d.get("InstantAmperage", d.get("Amperage"))
+    if d.get("ExternalConnected") is False and isinstance(volts, int) and isinstance(amps, int):
+        if amps >= 2**63:                                  # a negative number stored as an unsigned one
+            amps -= 2**64
+        return ok(volts * abs(amps) / 1e6)
+    return None
+
+
+def _ioreg() -> bytes:
+    return subprocess.run(["/usr/sbin/ioreg", "-r", "-n", "AppleSmartBattery", "-a"], capture_output=True, timeout=5).stdout
+
+
+class MacMeter:
+    """macOS: the computer's power now, asked once a second and summed up. read() gives (joules, seconds)."""
+    scope, source = "computer", "the computer's power as its battery controller reports it (macOS)"
+
+    def __init__(self, reader=_ioreg, step: float = 1.0):
+        w = mac_watts(reader())
+        if w is None:
+            raise RuntimeError("no power figure from the battery controller")
+        self._reader, self._step = reader, step
+        self._lock = threading.Lock()
+        self._joules, self._w, self._t = 0.0, w, time.monotonic()
+        threading.Thread(target=self._follow, daemon=True).start()
+
+    def _follow(self) -> None:
+        while True:
+            time.sleep(self._step)
+            try:
+                w = mac_watts(self._reader())
+            except Exception:  # noqa: BLE001 - keep the last value
+                w = None
+            with self._lock:
+                now = time.monotonic()
+                self._joules += self._w * (now - self._t)
+                self._t = now
+                if w is not None:
+                    self._w = w
+
+    def read(self) -> tuple[float, float]:
+        with self._lock:
+            now = time.monotonic()
+            return self._joules + self._w * (now - self._t), now
+
+    @staticmethod
+    def joules(a, b) -> float:
+        return b[0] - a[0]
+
+    @staticmethod
+    def seconds(a, b) -> float:
+        return b[1] - a[1]
+
+
 def _get():
-    """The package meter, or None when this computer has none (the reason is kept in _error)."""
+    """This computer's meter, or None when it has none that a normal user may read (the reason is kept in _error)."""
     global _meter, _error
     with _guard:
         if _meter is None and _error is None:
             try:
-                from bench.emi import PackageMeter
-                _meter = PackageMeter()
-            except Exception:  # noqa: BLE001 - any reason: the page then shows no power line
-                _error = "the processor's energy meter is not available on this computer"
+                if os.environ.get("DH_METER") == "off":
+                    raise RuntimeError("switched off")
+                if sys.platform == "win32":
+                    from bench.emi import PackageMeter
+                    _meter = PackageMeter()
+                elif sys.platform == "darwin":
+                    _meter = MacMeter()
+                else:
+                    _meter = RaplMeter()
+            except Exception:  # noqa: BLE001 - any reason: the page then says that there is no power reading
+                _error = {"win32": "Windows gives no reading of the processor's energy counter on this computer",
+                          "darwin": "this Mac's battery controller gives no power figure (a desktop Mac has none)",
+                          }.get(sys.platform, "the processor's energy counter cannot be read here (on Linux it is often limited to the administrator)")
         return _meter
+
+
+def scope() -> str:
+    """What the reading covers: "processor" (Windows, Linux) or "computer" (macOS)."""
+    return getattr(_meter, "scope", "processor")
 
 
 def _sample(m) -> None:
@@ -84,9 +194,10 @@ def now() -> dict:
     pts = list(_series)
     if _meter is None or not pts:
         return {"available": _meter is not None, "error": _error, "watts": None, "series": [], "step_s": STEP_S,
-                "machine": machine()}
+                "machine": machine(), "scope": scope()}
     return {"available": True, "error": None, "watts": round(sum(pts[-2:]) / len(pts[-2:]), 1), "low": min(pts), "high": max(pts),
-            "series": pts, "step_s": STEP_S, "machine": machine()}
+            "series": pts, "step_s": STEP_S, "machine": machine(), "scope": scope(),
+            "source": getattr(_meter, "source", "the processor's energy counter (Windows)")}
 
 
 class Span:
@@ -105,7 +216,8 @@ class Span:
 
     def figures(self, flops: float | None = None) -> dict:
         """seconds, joules and watts of the span (joules and watts None without a meter), and the operations."""
-        out = {"seconds": round(self.seconds, 4), "joules": None, "watts": None, "flops": None if flops is None else float(round(flops))}
+        out = {"seconds": round(self.seconds, 4), "joules": None, "watts": None, "flops": None if flops is None else float(round(flops)),
+               "scope": getattr(self._m, "scope", "processor")}
         if self._m is not None and self._a is not None and self._b is not None:
             j, s = self._m.joules(self._a, self._b), self._m.seconds(self._a, self._b)
             if s > 0 and j >= 0:

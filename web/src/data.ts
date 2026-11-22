@@ -209,11 +209,14 @@ export const useDescribeDemo = (enabled: boolean) =>
              queryFn: () => getJson<SavedDescription[]>("/data/describe_demo.json") });
 // ---- Run jobs page: the three other job types, live (dh/tryjobs.py) -------------------------------
 /** What one answer cost on the laptop: time, processor energy from its own meter, arithmetic operations (calculated). */
-export interface Work { seconds: number; joules: number | null; watts: number | null; flops: number | null }
+export interface Work {
+  seconds: number; joules: number | null; watts: number | null; flops: number | null; scope?: "processor" | "computer";
+}
 /** The processor's power in the last minute, one value every `step_s` seconds (dh/meter.py). */
 export interface Meter {
   available: boolean; error: string | null; watts: number | null; low?: number; high?: number; series: number[]; step_s: number;
   machine?: { cores: number | null; logical: number | null; threads: number };
+  scope?: "processor" | "computer"; source?: string;
 }
 export const useMeter = (enabled: boolean) =>
   useQuery({ queryKey: ["meter"], enabled, retry: false, staleTime: 0, queryFn: () => getJson<Meter>("/api/meter"),

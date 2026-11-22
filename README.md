@@ -13,8 +13,10 @@ run that kind of work yourself, on your own computer, and shows what each answer
 | Text generation | Write a request; the answer appears while it is being written | Qwen3-0.6B |
 
 Above the panels a strip shows the processor's power over the last minute, and under each answer you see its
-processor energy and the arithmetic operations (FLOPs) it needed. The energy reading works on Windows only (it uses
-the Windows energy meter interface); on other systems the strip is hidden and the answers show time and operations.
+energy and the arithmetic operations (FLOPs) it needed. Where the reading comes from depends on the system: on
+Windows the processor's energy counter; on Linux the same counter, if the system lets a normal user read it; on a Mac
+laptop the power of the whole computer as its battery controller reports it. Where none of these exists (a desktop
+Mac, for example) the page says so and the answers show time and FLOPs only.
 
 Everything is computed on your computer. The service listens on 127.0.0.1 only and blocks outside connections of its
 own process; the models are read from the local Hugging Face cache.
@@ -90,8 +92,9 @@ cd web && npm run build     # type check and production build
 
 ## How the figures are made
 
-- **Energy** is the processor's own energy counter read before and after a request (Windows EMI, `bench/emi.py`). It
-  covers the processor only, not screen or fans, and includes every program that is running at that moment.
+- **Energy** is read before and after a request (`dh/meter.py`). On Windows and Linux it is the processor's own
+  energy counter (the processor only, not screen or fans); on a Mac laptop it is the whole computer's power summed
+  over the request. Either way it includes every program that is running at that moment.
 - **FLOPs** are calculated, not read from hardware, with a multiply-add counted as 2. Tiles are counted exactly from
   the picture. Text embeddings and photos use counts taken on real inputs (`measurements/flops_per_unit.json`). The
   language model is counted as 2 per weight of the matrix products each token passes through. Photo descriptions are
@@ -125,4 +128,5 @@ Each model stays under its own licence; see its page. The small models here can 
 
 Checked on Windows 11: the tests, the build, and all five panels in the browser with and without the service.
 Not checked: macOS and Linux, a computer without the models already downloaded, and installing from
-`requirements.txt` into an empty Python environment.
+`requirements.txt` into an empty Python environment. The power readings for macOS and Linux were written without
+such a computer at hand: their arithmetic is tested, the reading itself is not.

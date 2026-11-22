@@ -499,6 +499,7 @@ function RenderPanel({ live, job, demo, status }: { live: boolean; job?: Workloa
     return { width: W, height: H, transform: `translate(${tx}px, ${ty}px) scale(${s})` };
   }, [shot, view, W, H]);
   const settled = shot && !shot.preview && same(shot.view, view) && shot.iters === iters && shot.w === W && shot.h === H;
+  const meterScope = useMeter(live).data?.scope;
   const zoom = HOME.span / view.span;
   const saved = demo?.tiles ?? [];
 
@@ -538,7 +539,7 @@ function RenderPanel({ live, job, demo, status }: { live: boolean; job?: Workloa
               <div><dt>Work in the picture</dt><dd>{shot ? `${dec(shot.tiles, shot.tiles < 10 ? 1 : 0)}${NB}tiles of the job` : "–"}</dd></div>
               <div><dt>Zoom</dt><dd>{zoomText(zoom)}</dd></div>
               <div><dt>State</dt><dd>{error ? "no answer" : settled ? "full detail" : "preview, sharpening"}</dd></div>
-              {shot?.joules != null ? <div><dt>Processor energy</dt><dd>{joule(shot.joules)}{shot.watts != null ? <span className="run-sub"> at {dec(shot.watts, 1)}{NB}W</span> : null}</dd></div> : null}
+              {shot?.joules != null ? <div><dt>{meterScope === "computer" ? "Computer energy" : "Processor energy"}</dt><dd>{joule(shot.joules)}{shot.watts != null ? <span className="run-sub"> at {dec(shot.watts, 1)}{NB}W</span> : null}</dd></div> : null}
               {shot?.flops != null ? <div><dt>Operations</dt><dd>{ops(shot.flops)} FLOPs{shot.seconds > 0 ? <span className="run-sub"> at {gflop(shot.flops / shot.seconds)} a second</span> : null}</dd></div> : null}
             </dl>
             <div className="btn-row run-zoom">
@@ -744,13 +745,23 @@ function CaptionFacts({ job, live }: { job?: Workload; live: boolean }) {
  *  running service can read the meter. */
 function MeterStrip() {
   const d = useMeter(true).data;
-  if (!d?.available || d.watts == null || d.series.length < 2) return null;
+  if (!d) return null;
+  if (!d.available) {
+    return (
+      <p className="run-meter run-meter-off">
+        <b>No power reading on this computer.</b> {d.error ? `The service reports: ${d.error}. ` : ""}
+        The answers below still show their time and their arithmetic operations (FLOPs).
+      </p>
+    );
+  }
+  if (d.watts == null || d.series.length < 2) return null;
+  const whole = d.scope === "computer";
   const W = 260, H = 48, top = Math.max(12, ...d.series) * 1.08, n = d.series.length;
   const pts = d.series.map((v, i) => `${(W - (n - 1 - i) * (W / 119)).toFixed(1)},${(H - 3 - (v / top) * (H - 6)).toFixed(1)}`).join(" ");
   return (
-    <div className="run-meter" role="group" aria-label="Processor power of this computer">
+    <div className="run-meter" role="group" aria-label={whole ? "Power of this computer" : "Processor power of this computer"}>
       <div className="run-meter-now">
-        <span>Processor power now</span>
+        <span>{whole ? "Computer power now" : "Processor power now"}</span>
         <b>{dec(d.watts, 1)}{NB}W</b>
       </div>
       <svg className="run-meter-line" viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
@@ -758,11 +769,10 @@ function MeterStrip() {
         <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
       <p className="run-meter-note">
-        Read from this computer's own energy meter every half second; the line is the last minute
-        {d.low != null && d.high != null ? <>, between {dec(d.low, 1)} and {dec(d.high, 1)}{NB}W</> : null}. It covers the
-        processor only, with every program that is running.
+        Read from {d.source ?? "this computer's own energy meter"} every half second; the line is the last minute
+        {d.low != null && d.high != null ? <>, between {dec(d.low, 1)} and {dec(d.high, 1)}{NB}W</> : null}. It covers {whole ? "the whole computer, screen included" : "the processor only"}, with every program that is running.
         {d.machine?.cores ? <> This computer's processor has {d.machine.cores} cores{d.machine.logical && d.machine.logical !== d.machine.cores ? <> ({d.machine.logical} threads)</> : null}; the jobs compute on {d.machine.threads} threads.</> : null}{" "}
-        Under each answer: the energy the processor took while it was computed, and the arithmetic operations it
+        Under each answer: the energy {whole ? "the computer" : "the processor"} took while it was computed, and the arithmetic operations it
         needed, in FLOPs (one addition or multiplication of two decimal numbers each; a GFLOP is a billion of them).
         The FLOPs are calculated, not read from the hardware. All of the energy ends up as heat.
       </p>

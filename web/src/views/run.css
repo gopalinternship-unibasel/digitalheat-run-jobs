@@ -131,3 +131,5 @@
 .run-sub { font-size: 14px; font-weight: 400; color: var(--ink-2); }
 @media (max-width: 900px) { .run-meter { grid-template-columns: auto minmax(0, 1fr); } .run-meter-note { grid-column: 1 / -1; } }
 @media (max-width: 520px) { .run-meter { grid-template-columns: 1fr; } }
+.run-meter-off { display: block; font-size: 14px; color: var(--ink-2); max-width: 86ch; }
+.run-meter-off b { color: var(--ink); }

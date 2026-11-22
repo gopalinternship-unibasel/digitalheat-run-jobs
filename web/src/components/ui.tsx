@@ -123,7 +123,7 @@ export function Effort({ w }: { w?: Work | null }) {
   if (!w || (w.joules == null && w.flops == null)) return null;
   return (
     <>
-      {w.joules != null ? <>Processor energy: <b>{joule(w.joules)}</b>{w.watts != null ? <> ({dec(w.watts, 1)}{"\u00a0"}W on average)</> : null}. </> : null}
+      {w.joules != null ? <>{w.scope === "computer" ? "Energy of the whole computer" : "Processor energy"}: <b>{joule(w.joules)}</b>{w.watts != null ? <> ({dec(w.watts, 1)}{"\u00a0"}W on average)</> : null}. </> : null}
       {w.flops != null ? <>Operations: about <b>{ops(w.flops)} FLOPs</b>{w.seconds > 0 ? <>, {gflop(w.flops / w.seconds)} a second</> : null}.</> : null}
     </>
   );

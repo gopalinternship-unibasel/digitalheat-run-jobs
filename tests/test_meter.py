@@ -51,3 +51,41 @@ def test_the_power_line_has_the_promised_shape():
         assert now["watts"] > 0 and 1 <= len(now["series"]) <= meter.KEEP and all(v >= 0 for v in now["series"])
     else:
         assert now["watts"] is None and now["series"] == []
+
+
+def test_mac_power_is_read_from_the_battery_controller_answer():
+    import plistlib
+    def answer(**d):
+        return plistlib.dumps([d])
+    # the controller's own figure for the system, in milliwatts
+    assert meter.mac_watts(answer(PowerTelemetryData={"SystemLoad": 7254}, ExternalConnected=True)) == 7.254
+    # no such figure, on battery: voltage times current (the current is stored as an unsigned number)
+    assert abs(meter.mac_watts(answer(Voltage=12000, InstantAmperage=2**64 - 800, ExternalConnected=False)) - 9.6) < 1e-9
+    # plugged in without the figure, a figure that cannot be true, no battery, or no answer: no reading
+    assert meter.mac_watts(answer(Voltage=12000, InstantAmperage=800, ExternalConnected=True)) is None
+    assert meter.mac_watts(answer(PowerTelemetryData={"SystemLoad": 7}, ExternalConnected=True)) is None
+    assert meter.mac_watts(plistlib.dumps([])) is None and meter.mac_watts(b"") is None
+
+
+def test_mac_meter_sums_power_over_time():
+    import plistlib
+    import time
+    m = meter.MacMeter(reader=lambda: plistlib.dumps([{"PowerTelemetryData": {"SystemLoad": 10000}}]), step=0.05)
+    a = m.read()
+    time.sleep(0.3)
+    b = m.read()
+    assert abs(m.joules(a, b) / m.seconds(a, b) - 10.0) < 0.01 and 0.25 < m.seconds(a, b) < 0.6
+
+
+def test_linux_counter_is_read_and_may_start_again_at_zero():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as folder:
+        base = Path(folder)
+        (base / "max_energy_range_uj").write_text("1000000")
+        (base / "energy_uj").write_text("999000")
+        m = meter.RaplMeter(base=base)
+        a = m.read()
+        (base / "energy_uj").write_text("4000")
+        b = m.read()
+        assert abs(m.joules(a, b) - 0.005) < 1e-9 and m.seconds(a, b) >= 0
