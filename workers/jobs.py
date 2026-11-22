@@ -41,6 +41,8 @@ PASSAGE_WORDS = 120
 THREADS = int(os.environ.get("DH_THREADS", "4"))
 IMAGE_DIR = ROOT / "data" / "memobase" / "thumbs"
 IMAGE_LIST = ROOT / "data" / "memobase" / "ids.txt"
+EMBED_ID = "sentence-transformers/all-MiniLM-L6-v2"
+EMBED_REVISION = "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"   # pinned version
 CLIP_ID = "sentence-transformers/clip-ViT-B-32"
 CLIP_REVISION = "327ab6726d33c0e22f920c83f2ff9e4bd38ca37f"   # pinned version
 CAPTION_ID = "florence-community/Florence-2-base"           # 0.23 B parameters, MIT licence, 463 MB weights
@@ -84,7 +86,7 @@ def load_embedder():
         os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
         preload_pyarrow()
         from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
+        _model = SentenceTransformer(EMBED_ID, device="cpu", revision=EMBED_REVISION)
     return _model
 
 

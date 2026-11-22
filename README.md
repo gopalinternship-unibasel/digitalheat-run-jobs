@@ -38,6 +38,9 @@ cd web
 npm install
 ```
 
+If `setup_models.py` reports that Windows refused to create a link in the model cache, turn on Developer Mode
+(Settings > System > For developers) or run it once from an administrator terminal, then run it again.
+
 The thumbnails are not in this repository on purpose (see "Photos" below). Without them the photo panel still
 compares photos, but shows no pictures. The download script rewrites `data/memobase/ids.txt` with the photos it
 fetched; the service does not read that file, so a changed `ids.txt` in `git status` is harmless.
